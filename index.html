@@ -381,6 +381,37 @@
             border-top: 1px solid #ecf0f1;
         }
 
+        /* Drag & Drop */
+        .project-table tbody tr[draggable="true"] {
+            cursor: grab;
+        }
+
+        .project-table tbody tr[draggable="true"]:active {
+            cursor: grabbing;
+        }
+
+        .drag-handle {
+            color: #bdc3c7;
+            font-size: 16px;
+            cursor: grab;
+            padding: 0 4px;
+            user-select: none;
+        }
+
+        .drag-handle:hover {
+            color: #7f8c8d;
+        }
+
+        tr.dragging {
+            opacity: 0.4;
+            background: #dfe6e9 !important;
+        }
+
+        tr.drag-over {
+            border-top: 3px solid #3498db !important;
+            background: #ebf5fb !important;
+        }
+
         .multi-select-bar {
             display: none;
             align-items: center;
@@ -561,6 +592,7 @@
                 <table class="project-table" id="currentProjectsTable">
                     <thead>
                         <tr>
+                            <th style="width:30px"></th>
                             <th><input type="checkbox" id="selectAllCheckbox" title="Select all"></th>
                             <th>Project Title</th>
                             <th>Researchers</th>
@@ -590,6 +622,7 @@
                 <table class="project-table" id="finishedProjectsTable">
                     <thead>
                         <tr>
+                            <th style="width:30px"></th>
                             <th><input type="checkbox" id="selectAllFinishedCheckbox" title="Select all"></th>
                             <th>Project Title</th>
                             <th>Researchers</th>
@@ -1010,10 +1043,13 @@
                 // Render active projects
                 filteredProjects.filter(p => p.status === 'active').forEach(project => {
                     const row = document.createElement('tr');
+                    row.setAttribute('draggable', 'true');
+                    row.setAttribute('data-id', project.id);
                     const isSelected = selectedRows.has(String(project.id));
                     if (isSelected) row.classList.add('selected-row');
 
                     row.innerHTML = `
+                        <td><span class="drag-handle" title="Déplacer">⠿</span></td>
                         <td><input type="checkbox" data-id="${project.id}" ${isSelected ? 'checked' : ''}></td>
                         <td>${project.title}</td>
                         <td>${project.researchers.join(', ')}</td>
@@ -1087,10 +1123,13 @@
                 // Render finished projects
                 filteredProjects.filter(p => p.status === 'finished').forEach(project => {
                     const row = document.createElement('tr');
+                    row.setAttribute('draggable', 'true');
+                    row.setAttribute('data-id', project.id);
                     const isSelected = selectedFinishedRows.has(String(project.id));
                     if (isSelected) row.classList.add('selected-row');
 
                     row.innerHTML = `
+                        <td><span class="drag-handle" title="Déplacer">⠿</span></td>
                         <td><input type="checkbox" data-id="${project.id}" ${isSelected ? 'checked' : ''}></td>
                         <td>${project.title}</td>
                         <td>${project.researchers.join(', ')}</td>
@@ -1154,6 +1193,62 @@
                 }
 
                 updateMultiSelectBarFinished();
+
+                // Activate drag & drop on both tables
+                enableDragAndDrop(currentProjectsTable, 'active');
+                enableDragAndDrop(finishedProjectsTable, 'finished');
+            }
+
+            // ─── Drag & Drop ────────────────────────────────────────────────
+            function enableDragAndDrop(tbody, status) {
+                let dragSrc = null;
+
+                tbody.querySelectorAll('tr[draggable]').forEach(row => {
+                    row.addEventListener('dragstart', function(e) {
+                        dragSrc = this;
+                        this.classList.add('dragging');
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', this.getAttribute('data-id'));
+                    });
+
+                    row.addEventListener('dragend', function() {
+                        this.classList.remove('dragging');
+                        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+                    });
+
+                    row.addEventListener('dragover', function(e) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+                        if (this !== dragSrc) this.classList.add('drag-over');
+                    });
+
+                    row.addEventListener('dragleave', function() {
+                        this.classList.remove('drag-over');
+                    });
+
+                    row.addEventListener('drop', function(e) {
+                        e.preventDefault();
+                        if (!dragSrc || dragSrc === this) return;
+
+                        this.classList.remove('drag-over');
+
+                        const draggedId = parseInt(dragSrc.getAttribute('data-id'));
+                        const targetId  = parseInt(this.getAttribute('data-id'));
+
+                        const draggedIdx = projects.findIndex(p => p.id === draggedId && p.status === status);
+                        const targetIdx  = projects.findIndex(p => p.id === targetId  && p.status === status);
+
+                        if (draggedIdx === -1 || targetIdx === -1) return;
+
+                        const [moved] = projects.splice(draggedIdx, 1);
+                        const newTarget = projects.findIndex(p => p.id === targetId && p.status === status);
+                        projects.splice(newTarget + (draggedIdx < targetIdx ? 1 : 0), 0, moved);
+
+                        saveData();
+                        renderProjects();
+                    });
+                });
             }
 
             // Render charts
